@@ -6,6 +6,7 @@ import org.example.payservice.Entity.Transaction;
 import org.example.payservice.Repositories.ChainRepository;
 import org.example.payservice.Repositories.InvoiceRepository;
 import org.example.payservice.Repositories.TransactionRepository;
+import org.example.payservice.Service.InvoiceService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.web3j.protocol.Web3j;
@@ -29,12 +30,12 @@ public class EvmService {
     private final Logger logger = Logger.getLogger("payService");
     private final ChainRepository chainRepository;
     private final TransactionRepository transactionRepository;
-    private final InvoiceRepository invoiceRepository;
+    private final InvoiceService invoiceService;
 
-    public EvmService(ChainRepository chainRepository, TransactionRepository transactionRepository, InvoiceRepository invoiceRepository) {
+    public EvmService(ChainRepository chainRepository, TransactionRepository transactionRepository, InvoiceService invoiceService) {
         this.chainRepository = chainRepository;
         this.transactionRepository = transactionRepository;
-        this.invoiceRepository = invoiceRepository;
+        this.invoiceService = invoiceService;
     }
 
     @Scheduled(fixedRate = 3000)
@@ -58,6 +59,7 @@ public class EvmService {
             } catch (Exception err) {
                 logger.log(Level.WARNING, err.toString());
             }
+            web3.shutdown();
         }
     }
 
@@ -67,13 +69,13 @@ public class EvmService {
             EthBlock.TransactionObject transactionObject = (EthBlock.TransactionObject) transactionRes.get();
             org.web3j.protocol.core.methods.response.Transaction transaction = transactionObject.get();
             if (transaction.getTo() != null) {
-                List<Invoice> invoices = invoiceRepository.findAll();
+                List<Invoice> invoices = invoiceService.findAll();
                 for (Invoice invoice :invoices) {
                     String address = invoice.getAddress();
                     if (transaction.getTo().equalsIgnoreCase(address)) {
                         Double value = new BigDecimal(transaction.getValue()).divide(new BigDecimal(BigInteger.TEN.pow(18))).doubleValue();
                         transactions.add(new Transaction(transaction.getTo(), transaction.getFrom(), "native", value, chain.getChainId(), transaction.getHash() ,invoice.getIdClient()));
-                        invoiceRepository.delete(invoice);
+                        invoiceService.delete(invoice);
                         System.out.println("Мы получили транзакцию от "+address+", и ждем " + chain.getAwaitingConfirmation() + " подтверждений");
                     } else if (chain.getChainId().equals("BSC") && transaction.getTo().equalsIgnoreCase(chain.getContractUSDT())) {
                         String inputData = transaction.getInput();
@@ -84,7 +86,7 @@ public class EvmService {
                                 BigInteger value = new BigInteger(valueHex, 16);
                                 Double usdtValue = new BigDecimal(value).divide(chain.getDivideByUsdtForConvert(), 2, RoundingMode.HALF_UP).doubleValue();
                                 transactions.add(new Transaction(toAddress, transaction.getFrom(),"usdt", usdtValue, chain.getChainId(), transaction.getHash(), invoice.getIdClient()));
-                                invoiceRepository.delete(invoice);
+                                invoiceService.delete(invoice);
                                 System.out.println("Мы получили вашу транзакцию, и ждем " + chain.getAwaitingConfirmation() + " подтверждений");
                             }
                         }
@@ -108,7 +110,6 @@ public class EvmService {
                     BigInteger awaitBlock = transactionReceipt.getTransactionReceipt().get().getBlockNumber().add(new BigInteger(String.valueOf(chain.getAwaitingConfirmation())));
                     if (awaitBlock.compareTo(blockNumber.getBlockNumber())<0){
                         transactionRepository.delete(transaction);
-
                     }
                 }
                 else transactionRepository.delete(transaction);

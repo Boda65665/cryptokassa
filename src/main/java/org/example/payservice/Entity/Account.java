@@ -2,7 +2,6 @@ package org.example.payservice.Entity;
 
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -17,8 +16,10 @@ public class Account {
     private Integer id;
     @Column(name = "address")
     private String address;
-    @Column(name = "secret_phrase")
+    @Column(name = "private_key")
     private String privateKey;
+    @Column(name = "is_busy")
+    private Boolean isBusy;
 
     public Account(String address, String privateKey) {
         this.address = address;

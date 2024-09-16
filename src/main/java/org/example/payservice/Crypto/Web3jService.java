@@ -2,85 +2,101 @@
 
     import org.example.payservice.Entity.Account;
     import org.example.payservice.Entity.Chain;
+    import org.example.payservice.Excepion.SendTransactionError;
     import org.example.payservice.Repositories.AccountRepository;
+    import org.example.payservice.Repositories.ChainRepository;
     import org.slf4j.LoggerFactory;
+    import org.springframework.beans.factory.annotation.Value;
     import org.springframework.stereotype.Service;
     import org.web3j.abi.FunctionEncoder;
     import org.web3j.abi.TypeReference;
     import org.web3j.abi.datatypes.Address;
     import org.web3j.abi.datatypes.Function;
     import org.web3j.abi.datatypes.generated.Uint256;
-    import org.web3j.crypto.Credentials;
-    import org.web3j.crypto.ECKeyPair;
-    import org.web3j.crypto.Keys;
+    import org.web3j.crypto.*;
+    import java.io.BufferedWriter;
+    import java.io.FileWriter;
     import java.util.Arrays;
     import java.util.Collections;
     import org.web3j.protocol.Web3j;
     import org.web3j.protocol.core.DefaultBlockParameterName;
+    import org.web3j.protocol.core.Response;
     import org.web3j.protocol.core.methods.request.Transaction;
     import org.web3j.protocol.core.methods.response.EthCall;
+    import org.web3j.protocol.core.methods.response.EthEstimateGas;
     import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
     import org.web3j.protocol.http.HttpService;
     import org.web3j.tx.Transfer;
     import org.web3j.utils.Convert;
+    import org.web3j.utils.Numeric;
     import java.io.IOException;
     import java.math.BigDecimal;
     import java.math.BigInteger;
     import java.security.SecureRandom;
-    import java.util.logging.Logger;
 
     @Service
     public class Web3jService {
-        private static final org.slf4j.Logger log = LoggerFactory.getLogger(Web3jService.class);
+        private final org.slf4j.Logger log = LoggerFactory.getLogger(Web3jService.class);
+        private final ChainRepository chainRepository;
         private final AccountRepository accountRepository;
+        @Value("${db.private_key}")
+        private String privateKey;
 
-        public Web3jService(AccountRepository accountRepository) {
+        public Web3jService(ChainRepository chainRepository, AccountRepository accountRepository) {
+            this.chainRepository = chainRepository;
             this.accountRepository = accountRepository;
         }
 
-        public Account createNewAccount(){
+        public String createNewAccount(){
             try {
                 SecureRandom secureRandom = new SecureRandom();
                 byte[] privateKeyBytes = new byte[32]; // 256 бит
                 secureRandom.nextBytes(privateKeyBytes);
                 ECKeyPair keyPair = ECKeyPair.create(privateKeyBytes);
                 String address = Keys.getAddress(keyPair);
-                String privateKey = keyPair.getPrivateKey().toString(16); // Приватный ключ в шестнадцатеричном формате
-                Account newAccount = new Account(address, privateKey);
-                accountRepository.save(newAccount);
-                return newAccount;
+                String privateKey = keyPair.getPrivateKey().toString(16);
+                Account account = new Account(STR."0x\{address}", privateKey);
+                accountRepository.save(account);
+                return account.getAddress();
             } catch (Exception e) {
-                e.printStackTrace();
+                log.error(e.getMessage());
+                return null;
             }
-            return null;
         }
 
-        public boolean sendMoney(Chain chain,String token, Account account, String recipientAddress) {
+        public boolean sendMoney(Chain chain,String token, Account account, String recipientAddress, BigDecimal amount) {
             try {
                 String privateKey = account.getPrivateKey();
                 Web3j web3j = Web3j.build(new HttpService(chain.getRpc()));
                 Credentials credentials = Credentials.create(privateKey);
                 BigInteger gasPrice = web3j.ethGasPrice().send().getGasPrice();
-                BigInteger estimatedGasLimit = BigInteger.valueOf(21000); 
+                BigInteger estimatedGasLimit = BigInteger.valueOf(21000);
                 BigInteger totalGasCost = gasPrice.multiply(estimatedGasLimit);
-                if (token.equals("native")) sendNativeTransfer(web3j, credentials, recipientAddress, totalGasCost);
+                if (token.equals("native")) sendNativeTransfer(web3j, credentials, recipientAddress, totalGasCost, amount);
                 else sendUsdtTransfer(web3j, credentials, chain.getContractUSDT(), account, recipientAddress);
+                return true;
             }
             catch (Exception err){
-                log.error("d");
+                String log = account.getAddress()+" - "+err.getMessage();
+                writeLogError(log);
+                return false;
             }
-            return false;
         }
 
-        public void sendUsdtTransfer(Web3j web3j, Credentials credentials, String contractUSDT, Account account, String recipientAddress) throws IOException {
+        public boolean sendMoney(Chain chain,String token, Account account, String recipientAddress){
+            return sendMoney(chain, token, account, recipientAddress, null);
+        }
+
+        public void sendUsdtTransfer(Web3j web3j, Credentials credentials, String contractUSDT, Account account, String recipientAddress) throws IOException, SendTransactionError {
             BigInteger balanceUsdt = getUsdtBalance(web3j, contractUSDT, account.getAddress());
-            String transactionHash = web3j.ethSendTransaction(getTransaction(web3j, recipientAddress, balanceUsdt, contractUSDT, credentials)).send().getTransactionHash();
-            System.out.println(transactionHash);
+            Response.Error error = web3j.ethSendRawTransaction(getTransaction(web3j, recipientAddress, balanceUsdt, contractUSDT, credentials)).send().getError();
+            if (error!=null){
+                throw new SendTransactionError(error.getMessage());
+            }
         }
 
-        private static Transaction getTransaction(Web3j web3j, String recipientAddress, BigInteger balance, String contract, Credentials credentials) throws IOException {
-            BigInteger gasLimit = BigInteger.valueOf(21000); // Установите лимит газа
-            BigInteger gasPrice = web3j.ethGasPrice().send().getGasPrice(); // Получите цену газа
+        private String getTransaction(Web3j web3j, String recipientAddress, BigInteger balance, String contract, Credentials credentials) throws IOException {
+            BigInteger gasPrice = web3j.ethGasPrice().send().getGasPrice();
             EthGetTransactionCount transactionCount = web3j.ethGetTransactionCount(
                     credentials.getAddress(),
                     DefaultBlockParameterName.LATEST).send();
@@ -90,17 +106,18 @@
                     Arrays.asList(new Address(recipientAddress), new Uint256(balance)),
                     Collections.emptyList()
             );
-
             String data = FunctionEncoder.encode(transferFunction);
-            return Transaction.createFunctionCallTransaction(
-                    credentials.getAddress(),
+            RawTransaction rawTransaction = RawTransaction.createTransaction(
                     nonce,
                     gasPrice,
-                    gasLimit,
+                    getMaxGazForThisTransaction(data, web3j),
                     contract,
                     data
             );
+            byte[] signedMessage = TransactionEncoder.signMessage(rawTransaction, credentials);
+            return Numeric.toHexString(signedMessage);
         }
+
         public BigInteger getUsdtBalance(Web3j web3j, String contract, String address) throws IOException {
             Function balanceOfFunction = new Function(
                     "balanceOf",
@@ -117,13 +134,13 @@
             return new BigInteger(response.getValue().substring(2), 16);
         }
 
-
-        public void sendNativeTransfer(Web3j web3j, Credentials credentials, String recipientAddress, BigInteger gaz) throws Exception {
+        public void sendNativeTransfer(Web3j web3j, Credentials credentials, String recipientAddress, BigInteger gaz, BigDecimal amount) throws Exception {
+            if (amount==null) amount = getBalanceNative(web3j, credentials, gaz);
             Transfer.sendFunds(
                     web3j,
                     credentials,
                     recipientAddress,
-                    getBalanceNative(web3j, credentials, gaz),
+                    amount,
                     Convert.Unit.ETHER
             ).send();
         }
@@ -134,5 +151,60 @@
                         .getBalance();
                 BigInteger amount = balance.subtract(gaz);
                 return Convert.fromWei(new BigDecimal(amount), Convert.Unit.ETHER);
+        }
+
+        private void writeLogError(String newLog){
+            String filePath = "P:\\payCrS\\payService\\src\\main\\java\\org\\example\\payservice\\Crypto\\log.txt";
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath, true))) {
+                writer.newLine();
+                writer.write(newLog);
+            } catch (IOException e) {
+                log.error(e.getMessage());
+            }
+        }
+
+        private BigInteger getMaxGazForThisTransaction(String encodeFunc, Web3j web3j) throws IOException {
+            EthEstimateGas estimateGas = web3j.ethEstimateGas(
+                            Transaction.createEthCallTransaction("0xF29466ca1622e16860797C1979C2C3cEA501CEf0", "0xF29466ca1622e16860797C1979C2C3cEA501CEf0", encodeFunc))
+                    .send();
+            return estimateGas.getAmountUsed().multiply(BigInteger.valueOf(4));
+        }
+
+        public BigDecimal getGazForReguralTransaction(){
+            return fromGweiToNativeToken(new BigInteger("30000"));
+        }
+
+        private BigDecimal fromGweiToNativeToken(BigInteger gwei){
+            return Convert.fromWei(gwei.toString(), Convert.Unit.GWEI);
+        }
+
+        public BigDecimal getGazForTransactionTokenERC20(String chainId) {
+            Chain chain = chainRepository.findByChainId(chainId);
+            Web3j web3j = Web3j.build(new HttpService(chain.getRpc()));
+            BigInteger randomAmount = new BigInteger("10000000000000000");
+            Address randomAddress = new Address("0xF29466ca1622e16860797C1979C2C3cEA501CEf0");
+            Function transferFunction = new Function(
+                    "transfer",
+                    Arrays.asList(randomAddress, new Uint256(randomAmount)),
+                    Collections.emptyList()
+            );
+            String data = FunctionEncoder.encode(transferFunction);
+            return getGazInNativeToken(data, web3j);
+        }
+
+        private BigDecimal getGazInNativeToken(String encodeFunc, Web3j web3j) {
+            try {
+                BigInteger gazInGwei = getMaxGazForThisTransaction(encodeFunc, web3j);
+                return fromGweiToNativeToken(gazInGwei);
+            }
+            catch (Exception err){
+                log.error(err.getMessage());
+                return null;
+            }
+        }
+
+        public void sendTokenForFee(String chainId, String recipientAddress){
+            Chain chain = chainRepository.findByChainId(chainId);
+            sendMoney(chain, "native", new Account("bank", privateKey), recipientAddress, getGazForTransactionTokenERC20(chainId));
         }
     }

@@ -1,0 +1,2 @@
+0xf29466ca1622e16860797c1979c2c3cea501cef0 - intrinsic gas too low: gas 20000, minimum needed 21644
+bank - Error processing transaction request: insufficient funds for gas * price + value: balance 13497790000000, tx cost 107480000000000, overshot 93982210000000

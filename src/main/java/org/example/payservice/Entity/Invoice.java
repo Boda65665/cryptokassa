@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -19,4 +21,10 @@ public class Invoice {
     private String address;
     @Column(name = "id_client")
     private String idClient;
+    @Column(name="value_usdt")
+    private int valueInUsdt;
+    @Column(name = "value_crypto")
+    private int valueInCrypto;
+    @Column(name = "time_create")
+    private LocalDateTime localDateTime;
 }
