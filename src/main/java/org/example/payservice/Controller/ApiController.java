@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import org.example.payservice.Body.InvoiceBody;
 import org.example.payservice.Body.LoginBody;
 import org.example.payservice.Entity.Account;
+import org.example.payservice.Entity.Transaction;
 import org.example.payservice.Entity.User;
 import org.example.payservice.Repositories.AccountRepository;
 import org.example.payservice.Repositories.UserRepository;
@@ -57,5 +58,11 @@ public class ApiController {
         User user = userRepository.findByEmail(loginBody.getEmail());
         if (user==null || !user.getPassword().equals(loginBody.getPassword())) return ResponseEntity.status(401).body("Incorrect password or email");
         return ResponseEntity.ok().body(jwtService.generateToken(loginBody.getEmail()));
+    }
+
+    @PostMapping("callback")
+    private ResponseEntity<?> callBack(@RequestBody org.example.payservice.HttpRequest.RequestBody requestBody){
+        System.out.println(requestBody);
+        return ResponseEntity.ok().body(requestBody);
     }
 }

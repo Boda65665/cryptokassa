@@ -17,9 +17,18 @@ public class AccountService {
         this.web3jService = web3jService;
     }
 
+    public void save(Account account){
+        accountRepository.save(account);
+        updateBusyStatusByAddress(account.getAddress());
+    }
+
     public String getFreeAddressAccount(){
         List<Account> freeAccounts = accountRepository.getFreeAccount();
-        if (freeAccounts.isEmpty())return web3jService.createNewAccount();
+        if (freeAccounts.isEmpty()){
+            Account account = web3jService.createNewAccount();
+            save(account);
+            return account.getAddress();
+        }
         else {
             String address = freeAccounts.getFirst().getAddress();
             updateBusyStatusByAddress(address);

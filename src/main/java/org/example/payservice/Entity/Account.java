@@ -21,6 +21,12 @@ public class Account {
     @Column(name = "is_busy")
     private Boolean isBusy;
 
+    public Account(String address, String privateKey, Boolean isBusy) {
+        this.address = address;
+        this.privateKey = privateKey;
+        this.isBusy = isBusy;
+    }
+
     public Account(String address, String privateKey) {
         this.address = address;
         this.privateKey = privateKey;

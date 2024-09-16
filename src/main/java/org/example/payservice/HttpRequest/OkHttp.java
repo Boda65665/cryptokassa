@@ -1,6 +1,7 @@
 package org.example.payservice.HttpRequest;
 
 import okhttp3.*;
+import okhttp3.RequestBody;
 
 import java.io.IOException;
 import java.util.logging.Level;
@@ -9,14 +10,12 @@ import java.util.logging.Logger;
 public class OkHttp {
     private final Logger logger = Logger.getLogger("okHttp");
 
-    private String send(String url,String json,String contentType,String auth,String authHeader,String method){
+    private String send(String url,String json,String auth,String authHeader,String method){
         OkHttpClient client = new OkHttpClient();
-        RequestBody body = RequestBody.create("", MediaType.parse("text/plain"));
+        MediaType mediaType = MediaType.parse("application/json");
+        RequestBody body = RequestBody.create("",mediaType);
         if (json!=null) {
-            body = RequestBody.create(
-                    json,
-                    MediaType.parse(contentType + "; charset=utf-8")
-            );
+            body = RequestBody.create(json,mediaType);
         }
         Request.Builder builderRequest = new Request.Builder();
         builderRequest.url(url);
@@ -42,14 +41,14 @@ public class OkHttp {
     }
 
     public String get(String url, String auth,String authHeader){
-        return send(url, null, null, auth, authHeader, "get");
+        return send(url, null, auth, authHeader, "get");
     }
 
     public String get(String url){
         return get(url, null, null);
     }
 
-    public String post(String url,String json,String contentType,String auth,String authHeader){
-        return send(url, json, contentType, auth, authHeader, "post");
+    public String post(String url,String json,String auth,String authHeader){
+        return send(url, json, auth, authHeader, "post");
     }
 }

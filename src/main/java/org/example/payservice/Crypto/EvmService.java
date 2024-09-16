@@ -1,12 +1,16 @@
 package org.example.payservice.Crypto;
 
+import com.google.gson.Gson;
 import org.example.payservice.Entity.Chain;
 import org.example.payservice.Entity.Invoice;
 import org.example.payservice.Entity.Transaction;
+import org.example.payservice.HttpRequest.OkHttp;
+import org.example.payservice.HttpRequest.RequestBody;
 import org.example.payservice.Repositories.ChainRepository;
 import org.example.payservice.Repositories.InvoiceRepository;
 import org.example.payservice.Repositories.TransactionRepository;
 import org.example.payservice.Service.InvoiceService;
+import org.example.payservice.Service.JwtService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.web3j.protocol.Web3j;
@@ -31,11 +35,14 @@ public class EvmService {
     private final ChainRepository chainRepository;
     private final TransactionRepository transactionRepository;
     private final InvoiceService invoiceService;
+    private final JwtService jwtService;
+    private final OkHttp okHttp = new OkHttp();
 
-    public EvmService(ChainRepository chainRepository, TransactionRepository transactionRepository, InvoiceService invoiceService) {
+    public EvmService(ChainRepository chainRepository, TransactionRepository transactionRepository, InvoiceService invoiceService, JwtService jwtService) {
         this.chainRepository = chainRepository;
         this.transactionRepository = transactionRepository;
         this.invoiceService = invoiceService;
+        this.jwtService = jwtService;
     }
 
     @Scheduled(fixedRate = 3000)
@@ -74,7 +81,9 @@ public class EvmService {
                     String address = invoice.getAddress();
                     if (transaction.getTo().equalsIgnoreCase(address)) {
                         Double value = new BigDecimal(transaction.getValue()).divide(new BigDecimal(BigInteger.TEN.pow(18))).doubleValue();
-                        transactions.add(new Transaction(transaction.getTo(), transaction.getFrom(), "native", value, chain.getChainId(), transaction.getHash() ,invoice.getIdClient()));
+                        Transaction newTransaction = new Transaction(transaction.getTo(), transaction.getFrom(), "native", value, chain.getChainId(), transaction.getHash() ,invoice.getIdClient());
+                        transactions.add(newTransaction);
+                        sendRequest("pending",newTransaction);
                         invoiceService.delete(invoice);
                         System.out.println("Мы получили транзакцию от "+address+", и ждем " + chain.getAwaitingConfirmation() + " подтверждений");
                     } else if (chain.getChainId().equals("BSC") && transaction.getTo().equalsIgnoreCase(chain.getContractUSDT())) {
@@ -84,10 +93,13 @@ public class EvmService {
                             if (toAddress.equalsIgnoreCase(address)) {
                                 String valueHex = inputData.substring(74);
                                 BigInteger value = new BigInteger(valueHex, 16);
-                                Double usdtValue = new BigDecimal(value).divide(chain.getDivideByUsdtForConvert(), 2, RoundingMode.HALF_UP).doubleValue();
-                                transactions.add(new Transaction(toAddress, transaction.getFrom(),"usdt", usdtValue, chain.getChainId(), transaction.getHash(), invoice.getIdClient()));
-                                invoiceService.delete(invoice);
+                                double usdtValue = new BigDecimal(value).divide(chain.getDivideByUsdtForConvert(), 2, RoundingMode.HALF_UP).doubleValue();
+                                Transaction newTransaction = new Transaction(toAddress, transaction.getFrom(),"usdt", usdtValue, chain.getChainId(), transaction.getHash(), invoice.getIdClient());
+                                transactions.add(newTransaction);
+                                sendRequest("pending", newTransaction);
                                 System.out.println("Мы получили вашу транзакцию, и ждем " + chain.getAwaitingConfirmation() + " подтверждений");
+                                invoiceService.delete(invoice);
+
                             }
                         }
                     }
@@ -109,15 +121,21 @@ public class EvmService {
                     EthBlockNumber blockNumber = web3j.ethBlockNumber().send();
                     BigInteger awaitBlock = transactionReceipt.getTransactionReceipt().get().getBlockNumber().add(new BigInteger(String.valueOf(chain.getAwaitingConfirmation())));
                     if (awaitBlock.compareTo(blockNumber.getBlockNumber())<0){
-                        transactionRepository.delete(transaction);
+                        sendRequest("completed",transaction);
                     }
                 }
-                else transactionRepository.delete(transaction);
+                transactionRepository.delete(transaction);
             }
             catch (Exception err){
                 logger.log(Level.WARNING, err.toString());
             }
         }
+    }
+
+    private void sendRequest( String type, Transaction transaction){
+        Gson gson = new Gson();
+        String idClient = transaction.getClientId();
+        okHttp.post("http://localhost:8080/api/callback", gson.toJson(new RequestBody(type,idClient,CurrencyConverter.fromCryptoToUSD(transaction))), jwtService.generateToken("harasukb@gmail.com"),"Auth");
     }
 }
 

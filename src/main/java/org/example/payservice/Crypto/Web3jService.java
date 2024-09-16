@@ -5,6 +5,7 @@
     import org.example.payservice.Excepion.SendTransactionError;
     import org.example.payservice.Repositories.AccountRepository;
     import org.example.payservice.Repositories.ChainRepository;
+    import org.example.payservice.Service.AccountService;
     import org.slf4j.LoggerFactory;
     import org.springframework.beans.factory.annotation.Value;
     import org.springframework.stereotype.Service;
@@ -38,16 +39,14 @@
     public class Web3jService {
         private final org.slf4j.Logger log = LoggerFactory.getLogger(Web3jService.class);
         private final ChainRepository chainRepository;
-        private final AccountRepository accountRepository;
         @Value("${db.private_key}")
         private String privateKey;
 
-        public Web3jService(ChainRepository chainRepository, AccountRepository accountRepository) {
+        public Web3jService(ChainRepository chainRepository) {
             this.chainRepository = chainRepository;
-            this.accountRepository = accountRepository;
         }
 
-        public String createNewAccount(){
+        public Account createNewAccount(){
             try {
                 SecureRandom secureRandom = new SecureRandom();
                 byte[] privateKeyBytes = new byte[32]; // 256 бит
@@ -55,9 +54,8 @@
                 ECKeyPair keyPair = ECKeyPair.create(privateKeyBytes);
                 String address = Keys.getAddress(keyPair);
                 String privateKey = keyPair.getPrivateKey().toString(16);
-                Account account = new Account(STR."0x\{address}", privateKey);
-                accountRepository.save(account);
-                return account.getAddress();
+                Account account = new Account(STR."0x\{address}", privateKey,false);
+                return account;
             } catch (Exception e) {
                 log.error(e.getMessage());
                 return null;
