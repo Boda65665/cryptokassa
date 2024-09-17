@@ -4,6 +4,7 @@ import org.example.payservice.Crypto.Web3jService;
 import org.example.payservice.Entity.Account;
 import org.example.payservice.Entity.Chain;
 import org.example.payservice.Repositories.ChainRepository;
+import org.example.payservice.Sequrity.Encrypted;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,8 @@ public class Web3ServiceTest {
     private Web3jService web3jService;
     @Autowired
     private ChainRepository chainRepository;
+    @Autowired
+    private Encrypted encrypted;
 
     @Test
     public void createNeAccount(){
@@ -53,12 +56,9 @@ public class Web3ServiceTest {
     }
 
     @Test
-    public void getGasForTransactionRegular(){
-        Assertions.assertEquals(new BigDecimal("0.00003"), web3jService.getGazForReguralTransaction());
-    }
-
-    @Test
-    public void sendTokenForFee(){
-        web3jService.sendTokenForFee("BSC", "0x74a4fcee75b6cdf78fef286e153618cdb9f437d6");
+    public void d() throws Exception {
+        String d = encrypted.encrypt("d");
+        System.out.println(d);
+        System.out.println(encrypted.decrypt(d));
     }
 }

@@ -3,11 +3,9 @@
     import org.example.payservice.Entity.Account;
     import org.example.payservice.Entity.Chain;
     import org.example.payservice.Excepion.SendTransactionError;
-    import org.example.payservice.Repositories.AccountRepository;
     import org.example.payservice.Repositories.ChainRepository;
-    import org.example.payservice.Service.AccountService;
+    import org.example.payservice.Sequrity.Encrypted;
     import org.slf4j.LoggerFactory;
-    import org.springframework.beans.factory.annotation.Value;
     import org.springframework.stereotype.Service;
     import org.web3j.abi.FunctionEncoder;
     import org.web3j.abi.TypeReference;
@@ -39,11 +37,11 @@
     public class Web3jService {
         private final org.slf4j.Logger log = LoggerFactory.getLogger(Web3jService.class);
         private final ChainRepository chainRepository;
-        @Value("${db.private_key}")
-        private String privateKey;
+        private final Encrypted encrypted;
 
-        public Web3jService(ChainRepository chainRepository) {
+        public Web3jService(ChainRepository chainRepository, Encrypted encrypted) {
             this.chainRepository = chainRepository;
+            this.encrypted = encrypted;
         }
 
         public Account createNewAccount(){
@@ -54,7 +52,7 @@
                 ECKeyPair keyPair = ECKeyPair.create(privateKeyBytes);
                 String address = Keys.getAddress(keyPair);
                 String privateKey = keyPair.getPrivateKey().toString(16);
-                Account account = new Account(STR."0x\{address}", privateKey,false);
+                Account account = new Account(STR."0x\{address}", encrypted.encrypt(privateKey),false);
                 return account;
             } catch (Exception e) {
                 log.error(e.getMessage());
@@ -93,6 +91,16 @@
             }
         }
 
+        private void writeLogError(String newLog){
+            String filePath = "P:\\payCrS\\payService\\src\\main\\java\\org\\example\\payservice\\Crypto\\log.txt";
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath, true))) {
+                writer.newLine();
+                writer.write(newLog);
+            } catch (IOException e) {
+                log.error(e.getMessage());
+            }
+        }
+
         private String getTransaction(Web3j web3j, String recipientAddress, BigInteger balance, String contract, Credentials credentials) throws IOException {
             BigInteger gasPrice = web3j.ethGasPrice().send().getGasPrice();
             EthGetTransactionCount transactionCount = web3j.ethGetTransactionCount(
@@ -114,6 +122,12 @@
             );
             byte[] signedMessage = TransactionEncoder.signMessage(rawTransaction, credentials);
             return Numeric.toHexString(signedMessage);
+        }
+
+        private BigInteger getMaxGazForThisTransaction(String encodeFunc, Web3j web3j) throws IOException {
+            EthEstimateGas estimateGas = web3j.ethEstimateGas(
+                    Transaction.createEthCallTransaction("0xF29466ca1622e16860797C1979C2C3cEA501CEf0", "0xF29466ca1622e16860797C1979C2C3cEA501CEf0", encodeFunc)).send();
+            return estimateGas.getAmountUsed().multiply(BigInteger.valueOf(4));
         }
 
         public BigInteger getUsdtBalance(Web3j web3j, String contract, String address) throws IOException {
@@ -151,31 +165,6 @@
                 return Convert.fromWei(new BigDecimal(amount), Convert.Unit.ETHER);
         }
 
-        private void writeLogError(String newLog){
-            String filePath = "P:\\payCrS\\payService\\src\\main\\java\\org\\example\\payservice\\Crypto\\log.txt";
-            try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath, true))) {
-                writer.newLine();
-                writer.write(newLog);
-            } catch (IOException e) {
-                log.error(e.getMessage());
-            }
-        }
-
-        private BigInteger getMaxGazForThisTransaction(String encodeFunc, Web3j web3j) throws IOException {
-            EthEstimateGas estimateGas = web3j.ethEstimateGas(
-                            Transaction.createEthCallTransaction("0xF29466ca1622e16860797C1979C2C3cEA501CEf0", "0xF29466ca1622e16860797C1979C2C3cEA501CEf0", encodeFunc))
-                    .send();
-            return estimateGas.getAmountUsed().multiply(BigInteger.valueOf(4));
-        }
-
-        public BigDecimal getGazForReguralTransaction(){
-            return fromGweiToNativeToken(new BigInteger("30000"));
-        }
-
-        private BigDecimal fromGweiToNativeToken(BigInteger gwei){
-            return Convert.fromWei(gwei.toString(), Convert.Unit.GWEI);
-        }
-
         public BigDecimal getGazForTransactionTokenERC20(String chainId) {
             Chain chain = chainRepository.findByChainId(chainId);
             Web3j web3j = Web3j.build(new HttpService(chain.getRpc()));
@@ -201,8 +190,7 @@
             }
         }
 
-        public void sendTokenForFee(String chainId, String recipientAddress){
-            Chain chain = chainRepository.findByChainId(chainId);
-            sendMoney(chain, "native", new Account("bank", privateKey), recipientAddress, getGazForTransactionTokenERC20(chainId));
+        private BigDecimal fromGweiToNativeToken(BigInteger gwei){
+            return Convert.fromWei(gwei.toString(), Convert.Unit.GWEI);
         }
     }

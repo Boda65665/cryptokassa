@@ -106,7 +106,9 @@ public class EvmService {
                 }
             }
         }
-        if (!transactions.isEmpty()) transactionRepository.saveAll(transactions);
+        if (!transactions.isEmpty()) {
+            transactionRepository.saveAll(transactions);
+        }
     }
 
     @Scheduled(fixedRate = 2000)
@@ -121,8 +123,10 @@ public class EvmService {
                     EthBlockNumber blockNumber = web3j.ethBlockNumber().send();
                     BigInteger awaitBlock = transactionReceipt.getTransactionReceipt().get().getBlockNumber().add(new BigInteger(String.valueOf(chain.getAwaitingConfirmation())));
                     if (awaitBlock.compareTo(blockNumber.getBlockNumber())<0){
+                        System.out.println(21);
                         sendRequest("completed",transaction);
                     }
+                    else continue;
                 }
                 transactionRepository.delete(transaction);
             }
