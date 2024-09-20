@@ -62,6 +62,7 @@ public class ApiController {
 
     @PostMapping("callback")
     private ResponseEntity<?> callBack(@RequestBody org.example.payservice.HttpRequest.RequestBody requestBody){
+        System.out.println(requestBody);
         return ResponseEntity.ok().body("");
     }
 }

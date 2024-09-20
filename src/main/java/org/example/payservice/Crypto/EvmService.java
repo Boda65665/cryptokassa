@@ -123,7 +123,6 @@ public class EvmService {
                     EthBlockNumber blockNumber = web3j.ethBlockNumber().send();
                     BigInteger awaitBlock = transactionReceipt.getTransactionReceipt().get().getBlockNumber().add(new BigInteger(String.valueOf(chain.getAwaitingConfirmation())));
                     if (awaitBlock.compareTo(blockNumber.getBlockNumber())<0){
-                        System.out.println(21);
                         sendRequest("completed",transaction);
                     }
                     else continue;
@@ -136,7 +135,7 @@ public class EvmService {
         }
     }
 
-    private void sendRequest( String type, Transaction transaction){
+    private void sendRequest(String type, Transaction transaction){
         Gson gson = new Gson();
         String idClient = transaction.getClientId();
         okHttp.post("http://localhost:8080/api/callback", gson.toJson(new RequestBody(type,idClient,CurrencyConverter.fromCryptoToUSD(transaction))), jwtService.generateToken("harasukb@gmail.com"),"Auth");
